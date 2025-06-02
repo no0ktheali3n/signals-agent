@@ -1,0 +1,12 @@
+
+[project]
+name = "my-uv-bootstrap"
+version = "0.1.0"
+description = "uv environment template for Python projects"
+authors = [{ name = "Your Name", email = "you@example.com" }]
+requires-python = ">=3.10"
+
+lockfile = "requirements.lock.txt"
+dependencies = [
+    "fastmcp>=2.5.2",
+]

@@ -1,0 +1,7 @@
+requests
+python-dotenv
+mcp[cli]
+pydantic
+httpx
+loguru
+fastmcp

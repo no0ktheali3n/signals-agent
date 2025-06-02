@@ -1,0 +1,21 @@
+{
+  "event_id": "sig_001_db_failure",
+  "timestamp": "2025-05-29T14:30:45Z",
+  "service": "user-authentication-service",
+  "severity": "critical",
+  "message": "PostgreSQL connection pool exhausted - unable to serve authentication requests",
+  "details": {
+    "database": "auth_db",
+    "connection_pool_size": 10,
+    "active_connections": 10,
+    "queue_length": 47,
+    "error_code": "POOL_EXHAUSTED",
+    "last_successful_connection": "2025-05-29T14:28:12Z",
+    "affected_endpoints": [
+      "/api/v1/login",
+      "/api/v1/refresh",
+      "/api/v1/validate"
+    ],
+    "estimated_affected_users": 150
+  }
+}
