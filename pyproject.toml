@@ -1,12 +1,16 @@
 
 [project]
-name = "my-uv-bootstrap"
-version = "0.1.0"
-description = "uv environment template for Python projects"
-authors = [{ name = "Your Name", email = "you@example.com" }]
+name = "signals-agent"
+version = "1.1.0"
+description = "MCP server/agent implementation for signals interpretation and processing"
+authors = [{ name = "no0k", email = "aii3nventures@gmail.com" }]
 requires-python = ">=3.10"
 
 lockfile = "requirements.lock.txt"
 dependencies = [
     "fastmcp>=2.5.2",
+    "mcp>=1.9.2",
+    "pydantic>=2.11.5",
+    "httpx",
+    "loguru"
 ]
