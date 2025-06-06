@@ -29,7 +29,29 @@ init-env:
 activate:
 	powershell -Command "Enable-VenvAutoActivate"
 
-# Run the main app file (assumes app.py exists, modify with use case)
+# Run the main server demo
 run:
 	uv pip sync requirements.lock.txt
-	python app.py
+	python main.py
+
+#run server/agent with stdio transport (default)
+run-server:
+	uv pip sync requirements.lock.txt
+	python main.py server
+
+run-agent:
+	uv sync requirements.lock.txt
+	python main.py agent
+
+#run server/agent with http transport
+run-server-http:
+	uv sync requirements.lock.txt
+	python server/server.py --transport http
+
+run-agent-http:
+	uv sync requirements.lock.txt
+	python agent/signal_agent.py --transport http
+
+run-inspector:
+	npx @modelcontextprotocol/inspector uv run python server/server.py
+

@@ -23,7 +23,7 @@ Signal Agent demonstrates the power of the Model Context Protocol (MCP) for buil
 - **Standards-compliant MCP implementation** using official SDK
 - **Robust input validation** with Pydantic schemas
 - **Comprehensive error handling** and logging
-- **Transport-agnostic design** (stdio for development, HTTP for production)
+- **Transport-agnostic design** (stdio for development, HTTP streamable for production)
 
 ### 🧠 **Intelligent Analysis Pipeline**
 - **Multi-stage event processing** with validation and enrichment
@@ -37,46 +37,6 @@ Signal Agent demonstrates the power of the Model Context Protocol (MCP) for buil
 - **Comprehensive logging** and debugging support
 - **Clear separation of concerns** between transport and business logic
 
-## Component Architecture
-
-```
-┌─────────────────┐    MCP Protocol    ┌──────────────────┐
-│   Signal Agent  │◄──────────────────►│  Signal Server   │
-│   (Client)      │     stdio/HTTP     │   (MCP Server)   │
-│                 │                    │                  │
-│ • Event Loading │                    │ • Tool Registry  │
-│ • Result Display│                    │ • Event Analysis │
-│ • Demo Workflow │                    │ • Classification │
-└─────────────────┘                    └──────────────────┘
-```
-
-## Transport Evolution
-
-### Development (Current)
-- **Transport**: stdio
-- **Use Case**: Local development, testing, MCP Inspector integration
-- **Benefits**: Simple, reliable, no network dependencies
-
-### Production (Future)
-- **Transport**: HTTP (streamable-http)
-- **Use Case**: Distributed systems, enterprise deployment
-- **Benefits**: Network scalability, multiple clients, load balancing
-
-## Analysis Pipeline
-
-1. **Input Validation** → Pydantic schema enforcement
-2. **Severity Analysis** → Keyword-based recalculation  
-3. **Event Classification** → Operational categorization
-4. **Recommendation** → Context-aware response generation
-5. **Formatting** → Human-readable summary creation
-
-## Extensibility Points
-
-- **Analysis Functions**: Easy to add new classification patterns
-- **Transport Layer**: Pluggable transport implementations
-- **Tool Registry**: Simple addition of new MCP tools
-- **Response Formatting**: Customizable output formats
-
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -88,10 +48,15 @@ Signal Agent demonstrates the power of the Model Context Protocol (MCP) for buil
 ```bash
 git clone https://github.com/no0ktheali3n/signal-agent.git
 cd signal-agent
-uv venv
-.venv/Scripts/activate
-just compile
-just sync
+
+# Setup environment and dependencies
+uv venv                         #first time only
+
+just venv                       #activates venv
+
+just init-install               #qol scripts and copes justfile to root
+
+just sync                       #syncs environment dependencies
 ```
 
 ### Run the Demo
@@ -100,10 +65,10 @@ just sync
 just run
 
 # Server only (for MCP Inspector testing)  
-just run-server
+just run server
 
 # Agent only (launches server subprocess)
-just run-agent
+just run agent
 ```
 
 ### Available Commands
@@ -159,7 +124,12 @@ Processes failure events through intelligent analysis pipeline.
 **Input Schema:**
 ```json
 {
-  "event_data": "JSON string containing FailureEvent"
+  "event_id": "string",
+  "timestamp": "string", 
+  "service": "string",
+  "severity": "string",
+  "message": "string",
+  "details": "object (optional)"
 }
 ```
 
@@ -198,16 +168,33 @@ Server health and connectivity verification.
 ### Testing with MCP Inspector
 
 ```bash
-
 # In another terminal, launch MCP Inspector
 npx @modelcontextprotocol/inspector uv run python server/server.py
+
+or
+
+just run-inspector
+```
+
+### Testing HTTP Transport
+
+```bash
+# Terminal 1: Start HTTP server
+just run-server-http
+
+# Terminal 2: Test with HTTP agent
+just run-agent-http
+
+# Or test with direct commands
+python main.py server --transport http
+python main.py agent --transport http
 ```
 
 The inspector will provide a web interface at `http://localhost:####` for interactive tool testing.
 
 ## 📊 Analysis Pipeline
 
-Signal Agent processes events through multi-stage pipeline:
+Signal Agent processes events through a sophisticated multi-stage pipeline:
 
 ### 1. **Input Validation**
 - JSON parsing and structure validation
@@ -273,21 +260,12 @@ signal-agent/
 
 ### Running Tests
 ```bash
-# Test server with MCP Inspector
-just run server
-npx @modelcontextprotocol/inspector uv run python server/server.py
+# Test server with MCP Inspector (stdio)
+just run-inspector
 
-# Test full demo
-just run
-
-# Test individual components (without just)
-uv run python server/server.py        # Server only
-uv run python agent/signal_agent.py   # Agent only
-
-# Test individual components (with just)
-
-just run-server
-just run-agent
+# Test HTTP server and agent
+just run-server-http &    # Background HTTP server
+just run-agent-http       # HTTP agent test
 ```
 
 ### Code Quality
@@ -300,18 +278,17 @@ just run-agent
 
 Signal Agent represents the foundation for more sophisticated incident response systems:
 
-### 🎯 **Current State**
+### 🎯 **Current State (v1.1.0)**
 - ✅ Standards-compliant MCP implementation
 - ✅ Intelligent event analysis
-- ✅ stdio support, integrating https-streamable asap
+- ✅ **Dual transport support** (stdio + HTTP streamable)
 - ✅ Production-ready architecture
+- ✅ **Modern development workflow** with justfile automation
 
 ### 🔮 **Future Evolution** 
 - 🌐 **HTTP transport** for distributed deployments
 - 📊 **Multiple monitoring integrations** (Sentry, Datadog, Raygun)
 - 🤖 **Machine learning** enhancement for pattern recognition
-- 🤖 **Automated task processes** AI enhanced data interpretation/delivery
-- 🤖 **Agentic Augmentations** for contextually aware interactions
 - 🏢 **Enterprise features** for MSP environments
 
 ## 🤝 Contributing
@@ -332,7 +309,6 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 - [Model Context Protocol](https://modelcontextprotocol.io) - Official MCP documentation
 - [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) - Official Python implementation
-- [Demo Video](https://loom.com/your-demo-link) - Live system demonstration
 
 ## 🙏 Acknowledgments
 

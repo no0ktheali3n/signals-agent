@@ -1,266 +1,248 @@
 # agent/signal_agent.py
 """
-Signal Agent - Official MCP SDK Client for Signal Server Communication
+Signal Agent - Dual Transport MCP Client for Signal Server Communication
 
-This module implements an MCP client using the official MCP SDK that connects 
-to the Signal Server via stdio transport to process failure events 
-and display analysis results.
-
-The agent provides:
-- Official MCP protocol client connection and handshake
-- Stdio transport for reliable local process communication
-- Failure event processing workflow coordination
-- Result formatting and display for human operators
-- Demo functionality for testing and validation
-
-Transport: Uses official MCP SDK ClientSession with stdio transport
-Architecture: Standards-compliant MCP client with proper protocol implementation
-
-Note: For TriAgent production deployment, this will be upgraded to use
-FastMCP with streamable-http transport for network connectivity.
+This module implements an MCP client that supports both stdio and HTTP streamable
+transports to connect to the Signal Server for failure event processing and 
+analysis results display.
 """
 
 import asyncio
 import json
 import logging
-import subprocess
-import sys
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from mcp.client.stdio import stdio_client, StdioServerParameters
+from mcp.client.streamable_http import streamablehttp_client
 from mcp import ClientSession
 
 # Configure module logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# =============================================================================
-# CLIENT IMPLEMENTATION
-# =============================================================================
-
 class SignalAgent:
     """
-    Official MCP SDK client for processing failure events through Signal Server.
-    
-    Provides high-level interface for failure event analysis by coordinating
-    communication with the Signal Server via official MCP protocol implementation.
-    
-    Features:
-    - Standards-compliant MCP protocol communication
-    - Stdio transport for local process connectivity
-    - Proper connection lifecycle management
-    - Error handling and protocol compliance
-    - Human-readable result formatting and display
-    - Self-contained demo capabilities
-    
-    Transport Architecture:
-    - Current: stdio transport for local development and testing
-    - Future (TriAgent): streamable-http for production MSP deployment
+    Dual transport MCP SDK client for processing failure events through Signal Server.
     """
     
-    def __init__(self, server_command: str = "python", server_args: Optional[List[str]] = None):
-        """
-        Initialize Signal Agent with MCP server connection parameters.
-        
-        Sets up official MCP SDK client for proper MCP protocol communication
-        over stdio transport. Prepares agent for connection to Signal Server
-        instance running as subprocess or separate process.
-        
-        Args:
-            server_command: Command to start server process (default: "python")
-            server_args: Arguments for server command (default: ["server/server.py"])
-        """
+    def __init__(self, 
+                 server_command: str = "python", 
+                 server_args: Optional[List[str]] = None, 
+                 transport: str = "stdio",
+                 server_url: str = "http://localhost:8000/mcp"):
+        """Initialize Signal Agent with MCP server connection parameters."""
         if server_args is None:
             server_args = ["server/server.py"]
         
-        # Create proper StdioServerParameters object
+        self.transport = transport
+        self.server_url = server_url
+        
+        # Create stdio server parameters (always available)
         self.server_params = StdioServerParameters(
             command=server_command,
-            args=server_args
+            args=server_args + (["--transport", "http"] if transport == "http" else [])
         )
+            
         self.connected = False
         self.server_process = None
         
-    # =========================================================================
-    # CONNECTION MANAGEMENT
-    # =========================================================================
-        
     async def connect(self) -> bool:
-        """
-        Establish connection with Signal Server and perform handshake.
-        
-        Uses official MCP SDK's stdio transport for proper protocol
-        negotiation. Launches server as subprocess and establishes
-        ClientSession for MCP communication.
-        
-        Returns:
-            True if connection successful, False otherwise
-            
-        Connection Process:
-        1. Launch Signal Server as subprocess via stdio transport
-        2. Create MCP ClientSession with stdin/stdout streams
-        3. Initialize MCP protocol connection
-        4. Verify server health via health_check tool
-        5. Set internal connection state
-        """
+        """Establish connection with Signal Server and perform handshake."""
         try:
-            logger.info("Connecting to Signal Server via MCP stdio protocol...")
+            logger.info(f"Connecting to Signal Server via MCP {self.transport} protocol...")
             
-            # Use official MCP SDK stdio client to launch server
-            async with stdio_client(self.server_params) as (read_stream, write_stream):
-                async with ClientSession(read_stream, write_stream) as session:
-                    # Initialize MCP protocol connection
-                    await session.initialize()
-                    
-                    # Verify connectivity by calling health_check tool
-                    result = await session.call_tool("health_check", {})
-                    
-                    if result and result.content:
-                        # Extract text content from MCP response
-                        response_text = ""
-                        for content in result.content:
-                            # Handle different MCP content types safely
-                            response_text += getattr(content, 'text', str(content))
-                        
-                        # Parse JSON response for health status
-                        try:
-                            health_data = json.loads(response_text) if response_text else {}
-                            if isinstance(health_data, dict) and health_data.get("status") == "healthy":
-                                self.connected = True
-                                logger.info("✅ MCP connection established with Signal Server")
-                                logger.info(f"Server: {health_data.get('message', 'Unknown')}")
-                                logger.info(f"Transport: {health_data.get('transport', 'stdio')}")
-                                return True
-                        except (json.JSONDecodeError, AttributeError):
-                            # Check if response indicates success without JSON parsing
-                            if "healthy" in response_text.lower():
-                                self.connected = True
-                                logger.info("✅ MCP connection established with Signal Server")
-                                return True
-                
-                self.connected = False
-                logger.error("❌ Server handshake failed - unhealthy response")
-                return False
+            if self.transport == "http":
+                # Use HTTP streamable client for connection
+                async with streamablehttp_client(self.server_url) as (read_stream, write_stream, _):
+                    async with ClientSession(read_stream, write_stream) as session:
+                        return await self._initialize_session(session)
+            else:
+                # Use stdio client for connection
+                async with stdio_client(self.server_params) as (read_stream, write_stream):
+                    async with ClientSession(read_stream, write_stream) as session:
+                        return await self._initialize_session(session)
                 
         except Exception as e:
             self.connected = False
             logger.error(f"❌ MCP connection failed: {str(e)}")
+            logger.error(f"❌ Transport: {self.transport}")
+            if self.transport == "http":
+                logger.error(f"❌ Server URL: {self.server_url}")
+            return False
+            
+    async def _initialize_session(self, session: ClientSession) -> bool:
+        """Initialize MCP session and verify server health."""
+        try:
+            # Initialize MCP protocol connection
+            await session.initialize()
+            
+            # Verify connectivity by calling health_check tool
+            result = await session.call_tool("health_check", {})
+            
+            logger.info(f"DEBUG: Health check result type: {type(result)}")
+            logger.info(f"DEBUG: Health check result: {result}")
+            
+            if result and result.content:
+                # Extract text content from MCP response
+                response_text = ""
+                for content in result.content:
+                    if hasattr(content, 'text'):
+                        response_text += content.text
+                    elif hasattr(content, 'data'):
+                        response_text += str(content.data)
+                    else:
+                        response_text += str(content)
+                
+                logger.info(f"DEBUG: Raw response content: {repr(response_text)}")
+                
+                # Parse JSON response for health status
+                try:
+                    if response_text.strip():
+                        health_data = json.loads(response_text)
+                        if isinstance(health_data, dict) and health_data.get("status") == "healthy":
+                            self.connected = True
+                            logger.info("✅ MCP connection established with Signal Server")
+                            logger.info(f"Server: {health_data.get('message', 'Unknown')}")
+                            logger.info(f"Transport: {health_data.get('transport', self.transport)}")
+                            return True
+                    else:
+                        logger.warning("⚠️ Empty response from health_check")
+                        if result and not hasattr(result, 'isError'):
+                            self.connected = True
+                            logger.info("✅ MCP connection established (empty but successful response)")
+                            return True
+                except (json.JSONDecodeError, AttributeError) as e:
+                    logger.error(f"JSON parsing error: {e}")
+                    if "healthy" in response_text.lower():
+                        self.connected = True
+                        logger.info("✅ MCP connection established with Signal Server")
+                        return True
+            
+            self.connected = False
+            logger.error("❌ Server handshake failed - unhealthy response")
+            return False
+            
+        except Exception as e:
+            self.connected = False
+            logger.error(f"❌ Session initialization failed: {str(e)}")
             return False
     
-    # =========================================================================
-    # EVENT PROCESSING WORKFLOW
-    # =========================================================================
-    
     async def process_failure_event(self, event_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Process failure event through Signal Server analysis pipeline.
-        
-        Uses official MCP SDK ClientSession to invoke server tools with 
-        proper MCP protocol compliance. Coordinates complete event analysis 
-        workflow including protocol communication, result processing, and 
-        human-readable display.
-        
-        Args:
-            event_data: Failure event dictionary with required fields
-            
-        Returns:
-            Server analysis result dictionary
-            
-        Processing Flow:
-        1. Launch Signal Server subprocess via stdio transport
-        2. Create ClientSession with stdin/stdout streams
-        3. Initialize MCP protocol connection
-        4. Prepare event data for MCP tool invocation
-        5. Call classify_failure_event tool via MCP protocol
-        6. Process MCP response content and extract results
-        7. Format and display human-readable summary
-        8. Return structured results for further use
-        """
+        """Process failure event through Signal Server analysis pipeline."""
         event_id = event_data.get('event_id', 'unknown')
         logger.info(f"Processing failure event via MCP: {event_id}")
         
         try:
-            # Use official MCP SDK stdio client for proper protocol communication
-            async with stdio_client(self.server_params) as (read_stream, write_stream):
-                async with ClientSession(read_stream, write_stream) as session:
-                    # Initialize MCP protocol connection
-                    await session.initialize()
-                    
-                    # Prepare event data as JSON string for MCP tool
-                    event_json = json.dumps(event_data)
-                    
-                    # Call MCP tool using official protocol
-                    result = await session.call_tool("classify_failure_event", {"event_data": event_json})
-                    
-                    # Process MCP protocol response
-                    if result and result.content:
-                        # Extract text content from MCP response
-                        response_text = ""
-                        for content in result.content:
-                            # Handle different MCP content types safely
-                            response_text += getattr(content, 'text', str(content))
-                        
-                        # Parse JSON result from MCP response
-                        try:
-                            analysis_result = json.loads(response_text) if response_text else {}
-                            
-                            if isinstance(analysis_result, dict) and analysis_result.get("status") == "processed":
-                                logger.info("✅ Event analysis completed via MCP protocol")
-                                
-                                # Display human-readable summary if available
-                                if "human_readable" in analysis_result:
-                                    self._display_analysis_result(analysis_result["human_readable"])
-                                
-                                return analysis_result
-                            else:
-                                logger.error("❌ Event analysis failed - invalid response format")
-                                return {"error": "Invalid response format", "status": "failed"}
-                                
-                        except (json.JSONDecodeError, AttributeError) as e:
-                            logger.error(f"❌ Failed to parse MCP response: {str(e)}")
-                            return {"error": f"Response parsing failed: {str(e)}", "status": "failed"}
-                    else:
-                        logger.error("❌ Event analysis failed - empty MCP response")
-                        return {"error": "Empty response from server", "status": "failed"}
+            if self.transport == "http":
+                # Use HTTP streamable client for connection
+                async with streamablehttp_client(self.server_url) as (read_stream, write_stream, _):
+                    async with ClientSession(read_stream, write_stream) as session:
+                        return await self._process_event(session, event_data)
+            else:
+                # Use stdio client for connection
+                async with stdio_client(self.server_params) as (read_stream, write_stream):
+                    async with ClientSession(read_stream, write_stream) as session:
+                        return await self._process_event(session, event_data)
                         
         except Exception as e:
-            logger.error(f"❌ MCP event processing failed: {str(e)}")
-            return {"error": str(e), "status": "failed"}
+            logger.error(f"❌ Event processing failed: {str(e)}")
+            return {
+                "error": str(e),
+                "status": "failed",
+                "event_id": event_id
+            }
+            
+    async def _process_event(self, session: ClientSession, event_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Process event through MCP session."""
+        try:
+            # Initialize MCP protocol connection
+            await session.initialize()
+            
+            # **FIXED**: Send individual parameters instead of event_data JSON string
+            # Extract event fields for direct parameter passing
+            tool_args = {
+                "event_id": event_data.get("event_id"),
+                "timestamp": event_data.get("timestamp"),
+                "service": event_data.get("service"),
+                "severity": event_data.get("severity"),
+                "message": event_data.get("message"),
+                "details": event_data.get("details", {})
+            }
+            
+            logger.info(f"DEBUG: Calling tool with individual parameters: {tool_args}")
+            
+            # Call MCP tool using individual parameters (not JSON string)
+            result = await session.call_tool("classify_failure_event", tool_args)
+            
+            logger.info(f"DEBUG: Tool call result type: {type(result)}")
+            logger.info(f"DEBUG: Tool call result: {result}")
+            
+            # Process MCP protocol response
+            if result and result.content:
+                # Extract text content from MCP response
+                response_text = ""
+                for content in result.content:
+                    if hasattr(content, 'text'):
+                        response_text += content.text
+                    elif hasattr(content, 'data'):
+                        response_text += str(content.data)
+                    else:
+                        response_text += str(content)
+                
+                logger.info(f"DEBUG: Processing response: {repr(response_text)}")
+                
+                # Parse JSON response
+                try:
+                    if response_text.strip():
+                        analysis_result = json.loads(response_text)
+                        
+                        if isinstance(analysis_result, dict) and analysis_result.get("status") == "processed":
+                            logger.info("✅ Event analysis completed via MCP protocol")
+                            
+                            # Display human-readable summary if available
+                            if "human_readable" in analysis_result:
+                                self._display_analysis_result(analysis_result["human_readable"])
+                            
+                            return analysis_result
+                        else:
+                            logger.error("❌ Event analysis failed - invalid response format")
+                            return {"error": "Invalid response format", "status": "failed"}
+                    else:
+                        logger.error("❌ Empty response from server")
+                        return {"error": "Empty response content", "status": "failed"}
+                        
+                except json.JSONDecodeError as e:
+                    logger.error(f"❌ Failed to parse JSON response: {str(e)}")
+                    logger.error(f"Raw response: {repr(response_text)}")
+                    return {
+                        "error": f"JSON parsing failed: {str(e)}",
+                        "raw_response": response_text,
+                        "status": "failed"
+                    }
+            
+            return {
+                "error": "Empty response from server",
+                "status": "failed"
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Event processing session failed: {str(e)}")
+            return {
+                "error": str(e),
+                "status": "failed"
+            }
     
     def _display_analysis_result(self, summary: str):
-        """
-        Display formatted analysis result for human consumption.
-        
-        Creates visually structured output for operational dashboards,
-        console interfaces, or notification systems.
-        
-        Args:
-            summary: Human-readable analysis summary from server
-        """
+        """Display formatted analysis result for human consumption."""
         print("\n" + "="*60)
         print("SIGNAL ANALYSIS RESULT")
         print("="*60)
         print(summary)
         print("="*60 + "\n")
     
-    # =========================================================================
-    # DEMO AND TESTING
-    # =========================================================================
-    
     async def load_test_event(self, file_path: str = "events/test_payload.json") -> Dict[str, Any]:
-        """
-        Load test failure event from JSON file.
-        
-        Provides test data loading for development and demonstration
-        purposes. Falls back to default event if file unavailable.
-        
-        Args:
-            file_path: Path to test event JSON file
-            
-        Returns:
-            Test event data dictionary
-        """
+        """Load test failure event from JSON file."""
         try:
             with open(file_path, 'r') as f:
                 return json.load(f)
@@ -272,44 +254,34 @@ class SignalAgent:
             return {}
     
     async def run_demo(self):
-        """
-        Execute complete Signal Agent demonstration workflow.
+        """Execute complete Signal Agent demonstration workflow."""
+        logger.info(f"🚀 Starting Signal Agent Demo (MCP SDK - {self.transport} transport)")
         
-        Provides end-to-end demonstration of agent capabilities using
-        official MCP SDK for standards-compliant protocol communication.
-        
-        Demo Flow:
-        1. Establish MCP server connection via stdio protocol
-        2. Load or create test failure event
-        3. Process event through server analysis via MCP tools
-        4. Display formatted results
-        5. Report final status
-        """
-        logger.info("🚀 Starting Signal Agent Demo (Official MCP SDK)")
-        
-        # Step 1: Connect to server via MCP protocol
+        # Step 1: Connect to server via selected transport
         if not await self.connect():
             logger.error("Demo failed - cannot establish MCP connection to server")
             return
         
-        # Step 2: Load test event data
-        test_event = await self.load_test_event()
-        if not test_event:
-            # Create default test event if file unavailable
-            test_event = {
-                "event_id": "demo_001",
-                "timestamp": datetime.now().isoformat(),
-                "service": "demo-authentication-service",
-                "severity": "critical",
-                "message": "Database connection pool exhausted - authentication requests failing",
-                "details": {
-                    "connection_pool_size": 10,
-                    "active_connections": 10,
-                    "queue_length": 25,
-                    "affected_users": 150
-                }
+        # Step 2: Use the test event from the logs
+        test_event = {
+            "event_id": "sig_001_db_failure",
+            "timestamp": "2025-05-29T14:30:45Z",
+            "service": "user-authentication-service",
+            "severity": "critical",
+            "message": "PostgreSQL connection pool exhausted - unable to serve authentication requests",
+            "details": {
+                "database": "auth_db",
+                "connection_pool_size": 10,
+                "active_connections": 10,
+                "queue_length": 47,
+                "error_code": "POOL_EXHAUSTED",
+                "last_successful_connection": "2025-05-29T14:28:12Z",
+                "affected_endpoints": ["/api/v1/login", "/api/v1/refresh", "/api/v1/validate"],
+                "estimated_affected_users": 150
             }
-            logger.info("Using default test event for MCP demo")
+        }
+        
+        logger.info("Using test event from previous logs")
         
         # Step 3: Process event through server via MCP protocol
         result = await self.process_failure_event(test_event)
@@ -320,33 +292,25 @@ class SignalAgent:
         else:
             logger.error("❌ MCP demo failed during event processing")
     
-    # =========================================================================
-    # RESOURCE MANAGEMENT
-    # =========================================================================
-    
     async def close(self):
-        """
-        Clean up agent resources and close connections.
-        
-        Official MCP SDK handles connection cleanup automatically when
-        exiting context managers, but this method provides explicit cleanup
-        for scenarios where manual resource management is needed.
-        """
+        """Clean up agent resources and close connections."""
         self.connected = False
         logger.info("Signal Agent resources cleaned up")
 
-# =============================================================================
-# MODULE ENTRY POINT
-# =============================================================================
-
 async def main():
-    """
-    Main entry point for standalone agent execution.
+    """Main entry point for standalone agent execution."""
+    import argparse
     
-    Creates Signal Agent instance and runs demonstration workflow
-    using official MCP SDK for standards-compliant protocol communication.
-    """
-    agent = SignalAgent()
+    parser = argparse.ArgumentParser(description="Signal Agent - Dual Transport MCP Client")
+    parser.add_argument("--transport", choices=["stdio", "http"], default="stdio",
+                      help="Transport mode (stdio or http)")
+    parser.add_argument("--server-url", default="http://localhost:8000/mcp",
+                      help="Server URL for HTTP transport")
+    
+    args = parser.parse_args()
+    
+    # Create and run agent
+    agent = SignalAgent(transport=args.transport, server_url=args.server_url)
     try:
         await agent.run_demo()
     finally:

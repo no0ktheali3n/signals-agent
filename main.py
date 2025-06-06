@@ -3,7 +3,7 @@
 Signal System Main Orchestrator
 
 This module provides the main entry point and orchestration for the complete
-Signal System, coordinating the FastMCP server and Signal Agent for failure
+Signal System, coordinating the dual-transport MCP server and Signal Agent for failure
 event processing and analysis.
 
 The orchestrator supports multiple deployment modes:
@@ -11,13 +11,14 @@ The orchestrator supports multiple deployment modes:
 - Server Only: Standalone MCP server for external clients
 - Agent Only: Standalone client connecting to existing server
 
-Transport: Currently stdio, will implement streamable-http for production deployment
-Architecture: Microservice pattern with clear separation of concerns
+Transport: Supports both stdio (development) and HTTP streamable (production)
+Architecture: Microservice pattern with clear separation of concerns and transport flexibility
 """
 
 import asyncio
 import logging
 import sys
+import argparse
 
 from agent.signal_agent import SignalAgent
 from server.server import SignalServer
@@ -42,18 +43,21 @@ class SignalOrchestrator:
     for complete system testing and validation.
     
     Features:
-    - Concurrent server and agent execution
+    - Concurrent server and agent execution with transport selection
     - Coordinated startup timing and synchronization
     - Integrated demonstration workflow
     - Graceful shutdown and resource cleanup
     - Error handling and recovery
+    - Transport-agnostic operation (stdio or HTTP streamable)
     """
     
-    def __init__(self):
+    def __init__(self, transport: str = "stdio", server_url: str = "http://localhost:8000/mcp"):
         """Initialize orchestrator with server and agent instances."""
         self.server = SignalServer()
-        self.agent = SignalAgent()
+        self.agent = SignalAgent(transport=transport, server_url=server_url)
         self.running = False
+        self.transport = transport
+        self.server_url = server_url
         
     # =========================================================================
     # COMPONENT MANAGEMENT
@@ -61,21 +65,21 @@ class SignalOrchestrator:
         
     async def _start_server_background(self):
         """
-        Start Signal Server in background mode with streamable-http transport.
+        Start Signal Server in background mode with selected transport.
         
         Launches MCP server as background task to handle incoming
         client connections while allowing concurrent agent operation.
         
         Server Configuration:
-        - Transport: stdio
+        - Transport: stdio (development) or HTTP streamable (production)
         - Mode: Continuous operation until shutdown
         - Clients: Supports multiple concurrent connections
         """
-        logger.info("🔧 Starting Signal Server (background mode)")
+        logger.info(f"🔧 Starting Signal Server (background mode) with {self.transport} transport")
         try:
-            # Note: server.start_server() is synchronous, so we run it in executor
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, self.server.start_server, "stdio")
+            # Import and use the async serve function directly
+            from server.server import serve_async
+            await serve_async(self.transport)
         except Exception as e:
             logger.error(f"Server startup failed: {str(e)}")
     
@@ -88,14 +92,19 @@ class SignalOrchestrator:
         
         Demo Process:
         - Wait for server startup completion
-        - Connect agent to server via streamable-http transport
+        - Connect agent to server via selected transport
         - Execute failure event processing demonstration
         - Display analysis results
         """
         # Allow time for server startup and initialization
-        await asyncio.sleep(3)
+        if self.transport == "http":
+            logger.info("⏳ Waiting for HTTP server startup (5 seconds)...")
+            await asyncio.sleep(5)  # HTTP server needs more time
+        else:
+            logger.info("⏳ Waiting for stdio server startup (2 seconds)...")
+            await asyncio.sleep(2)  # stdio server starts faster
         
-        logger.info("🤖 Starting Signal Agent Demo")
+        logger.info(f"🤖 Starting Signal Agent Demo with {self.transport} transport")
         await self.agent.run_demo()
     
     # =========================================================================
@@ -121,7 +130,10 @@ class SignalOrchestrator:
         server_task = None
         
         try:
-            logger.info("🚀 Signal System Starting...")
+            logger.info(f"🚀 Signal System Starting with {self.transport} transport...")
+            
+            if self.transport == "http":
+                logger.info(f"🌐 HTTP Server URL: {self.server_url}")
             
             # Create concurrent tasks for server and agent
             server_task = asyncio.create_task(self._start_server_background())
@@ -168,35 +180,39 @@ class SignalOrchestrator:
 # STANDALONE COMPONENT RUNNERS
 # =============================================================================
 
-async def run_server_only():
+async def run_server_only(transport: str = "stdio"):
     """
     Run Signal Server in standalone mode for external client connections.
     
-    Starts MCP server with stdio transport for development deployment
+    Starts MCP server with selected transport for development or production deployment
     where external agents connect from separate processes or systems.
     
     Use Cases:
-    - Development server deployment, production with streamable-http
-    - Development with external MCP clients
+    - Development server with stdio transport (MCP Inspector testing)
+    - Production deployment with HTTP streamable transport
     - Multi-agent architectures
     - Service-oriented deployments
     
     Server Features:
-    - HTTP-based MCP endpoint at /mcp
+    - stdio: Direct process communication, perfect for development
+    - http: Network-based communication, ideal for production
     - Concurrent client connection support
-    - Stateless request/response processing
     - Health monitoring and diagnostics
     """
-    logger.info("🔧 Starting Signal Server (standalone mode)")
-    logger.info("Server will accept MCP connections via streamable-http transport")
+    logger.info(f"🔧 Starting Signal Server (standalone mode) with {transport} transport")
     
-    server = SignalServer()
+    if transport == "http":
+        logger.info("🌐 HTTP Server will be available at: http://localhost:8000/mcp")
+        logger.info("📋 Connect clients to: http://localhost:8000/mcp")
+    else:
+        logger.info("📋 Server ready for stdio connections (MCP Inspector compatible)")
+        logger.info("🔍 Test with: npx @modelcontextprotocol/inspector python server/server.py")
+    
+    # Import and use the async serve function directly
+    from server.server import serve_async
+    await serve_async(transport)
 
-    # run fastmcp in a thread pool to avoid blocking
-    loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, server.start_server, "stdio")
-
-async def run_agent_only():
+async def run_agent_only(transport: str = "stdio", server_url: str = "http://localhost:8000/mcp"):
     """
     Run Signal Agent in standalone mode connecting to existing server.
     
@@ -212,13 +228,18 @@ async def run_agent_only():
     
     Prerequisites:
     - Signal Server must be running and accessible
-    - Network connectivity to server endpoint
-    - Compatible MCP protocol versions
+    - For HTTP: Server at specified URL
+    - For stdio: Agent will launch server subprocess
     """
-    logger.info("🤖 Starting Signal Agent (standalone mode)")
-    logger.info("Connecting to existing Signal Server")
+    logger.info(f"🤖 Starting Signal Agent (standalone mode) with {transport} transport")
     
-    agent = SignalAgent()
+    if transport == "http":
+        logger.info(f"🌐 Connecting to HTTP server at: {server_url}")
+        logger.info("⚠️  Ensure server is running: python main.py server --transport http")
+    else:
+        logger.info("📋 Agent will launch stdio server subprocess")
+    
+    agent = SignalAgent(transport=transport, server_url=server_url)
     try:
         await agent.run_demo()
     finally:
@@ -235,47 +256,75 @@ def main():
     Provides command-line interface for running Signal System in
     different configurations based on deployment requirements.
     
-    Usage Modes:
-    - python main.py          : Full integrated demo
-    - python main.py demo     : Explicit full demo mode
-    - python main.py server   : Server-only mode
-    - python main.py agent    : Agent-only mode
+    Usage Examples:
+    - python main.py                              : Full demo (stdio)
+    - python main.py --transport http             : Full demo (HTTP)
+    - python main.py server                       : Server only (stdio)
+    - python main.py server --transport http      : Server only (HTTP)
+    - python main.py agent                        : Agent only (stdio)
+    - python main.py agent --transport http       : Agent only (HTTP)
+    - python main.py demo --transport http        : Explicit demo (HTTP)
     
-    Mode Selection:
-    Analyzes command-line arguments to determine appropriate
-    deployment configuration and component startup.
+    Transport Modes:
+    - stdio: Development, testing, MCP Inspector compatibility
+    - http:  Production, distributed systems, network deployment
     """
-    if len(sys.argv) > 1:
-        mode = sys.argv[1].lower()
-        
-        if mode == "server":
-            # Server-only mode for production deployment
-            asyncio.run(run_server_only())
-            
-        elif mode == "agent":
-            # Agent-only mode for external server connection
-            asyncio.run(run_agent_only())
-            
-        elif mode == "demo":
-            # Explicit demo mode for full system demonstration
-            orchestrator = SignalOrchestrator()
-            asyncio.run(orchestrator.start())
-            
+    parser = argparse.ArgumentParser(description="Signal System - Dual Transport MCP Server/Agent")
+    parser.add_argument("mode", nargs="?", choices=["server", "agent", "demo"], default="demo",
+                      help="Operation mode (server, agent, or demo)")
+    parser.add_argument("--transport", choices=["stdio", "http"], default="stdio",
+                      help="Transport mode (stdio for development, http for production)")
+    parser.add_argument("--server-url", default="http://localhost:8000/mcp",
+                      help="Server URL for HTTP transport (default: http://localhost:8000/mcp)")
+    
+    args = parser.parse_args()
+    
+    # Display startup banner
+    print("🚨 Signal System - Intelligent MCP-based Failure Event Processing")
+    print("="*70)
+    print(f"Mode: {args.mode}")
+    print(f"Transport: {args.transport}")
+    if args.transport == "http":
+        print(f"Server URL: {args.server_url}")
+    print("="*70)
+    
+    if args.mode == "server":
+        # Server-only mode
+        print(f"🔧 Server-only mode with {args.transport} transport")
+        if args.transport == "http":
+            print("🌐 Production HTTP streamable server")
+            print("📋 Clients can connect via HTTP to /mcp endpoint")
         else:
-            # Invalid argument - show usage information
-            print("Usage: python main.py [server|agent|demo]")
-            print("  server: Run MCP server only (for external clients)")
-            print("  agent:  Run agent only (connect to existing server)")
-            print("  demo:   Run complete system demonstration")
-            
-    else:
-        # Default mode - full system demonstration
-        print("🚨 Starting Signal System - Full Demonstration")
-        print("Use 'python main.py server' for server-only mode")
-        print("Use 'python main.py agent' for agent-only mode")
-        print("="*60)
+            print("📋 Development stdio server")
+            print("🔍 Compatible with MCP Inspector and stdio clients")
+        print("-" * 70)
         
-        orchestrator = SignalOrchestrator()
+        asyncio.run(run_server_only(args.transport))
+        
+    elif args.mode == "agent":
+        # Agent-only mode
+        print(f"🤖 Agent-only mode with {args.transport} transport")
+        if args.transport == "http":
+            print("🌐 Connecting to HTTP streamable server")
+            print("⚠️  Ensure server is running separately")
+        else:
+            print("📋 Launching stdio server subprocess")
+        print("-" * 70)
+        
+        asyncio.run(run_agent_only(args.transport, args.server_url))
+        
+    else:
+        # Demo mode (default)
+        print(f"🚨 Full System Demo with {args.transport} transport")
+        if args.transport == "http":
+            print("🌐 Production-like HTTP streamable deployment")
+            print("📊 Demonstrates distributed system capabilities")
+        else:
+            print("📋 Development stdio deployment")
+            print("🔍 Perfect for local testing and development")
+        print("-" * 70)
+        
+        orchestrator = SignalOrchestrator(args.transport, args.server_url)
         asyncio.run(orchestrator.start())
 
 # =============================================================================
