@@ -4,7 +4,6 @@ __pycache__/
 .uv/
 .venv/
 .env
-.utils/misc/
 *.lock
 *.pyc
 *.pyo
@@ -15,6 +14,7 @@ __pycache__/
 *.sqlite3
 *.log
 *.db
+/utils/misc
 
 #IDEs
 .idea/
