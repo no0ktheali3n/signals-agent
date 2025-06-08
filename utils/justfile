@@ -17,6 +17,10 @@ upgrade:
 	uv pip compile --upgrade requirements.in > requirements.lock.txt
 	uv pip sync requirements.lock.txt
 
+# Set up PowerShell script install for justfile and autovenv
+init-install:
+	powershell -ExecutionPolicy Bypass -File powershell/install.ps1
+
 # Set up starter project files ()
 init-projectfiles:
     powershell -ExecutionPolicy Bypass -File powershell/jumpstarter.ps1
@@ -34,24 +38,30 @@ run:
 	uv pip sync requirements.lock.txt
 	python main.py
 
-#run server/agent with stdio transport (default)
+#run server/agent standalone with stdio transport (default)
 run-server:
 	uv pip sync requirements.lock.txt
 	python main.py server
 
 run-agent:
-	uv sync requirements.lock.txt
+	uv pip sync requirements.lock.txt
 	python main.py agent
 
 #run server/agent with http transport
 run-server-http:
-	uv sync requirements.lock.txt
+	uv pip sync requirements.lock.txt
 	python server/server.py --transport http
 
 run-agent-http:
-	uv sync requirements.lock.txt
+	uv pip sync requirements.lock.txt
 	python agent/signal_agent.py --transport http
+
+run-agent-http-demo:
+	uv pip sync requirements.lock.txt
+	python agent/signal_agent.py --transport http --demo
 
 run-inspector:
 	npx @modelcontextprotocol/inspector uv run python server/server.py
 
+venv:
+	.venv/Scripts/activate

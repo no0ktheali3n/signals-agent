@@ -4,6 +4,7 @@ __pycache__/
 .uv/
 .venv/
 .env
+.utils/misc/
 *.lock
 *.pyc
 *.pyo

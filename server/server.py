@@ -260,10 +260,6 @@ async def serve_stdio() -> None:
 # HTTP STREAMABLE SERVER IMPLEMENTATION (FastMCP)
 # =============================================================================
 
-# =============================================================================
-# HTTP STREAMABLE SERVER IMPLEMENTATION (FastMCP)
-# =============================================================================
-
 def serve_http_sync() -> None:
     """Run server with HTTP streamable transport using FastMCP (synchronous)."""
     from mcp.server.fastmcp import FastMCP

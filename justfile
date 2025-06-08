@@ -56,9 +56,12 @@ run-agent-http:
 	uv pip sync requirements.lock.txt
 	python agent/signal_agent.py --transport http
 
+run-agent-http-demo:
+	uv pip sync requirements.lock.txt
+	python agent/signal_agent.py --transport http --demo
+
 run-inspector:
 	npx @modelcontextprotocol/inspector uv run python server/server.py
 
 venv:
 	.venv/Scripts/activate
-

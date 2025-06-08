@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime
+
 from typing import Any, Dict, List, Optional
 
 from mcp.client.stdio import stdio_client, StdioServerParameters
@@ -127,6 +128,82 @@ class SignalAgent:
             self.connected = False
             logger.error(f"❌ Session initialization failed: {str(e)}")
             return False
+
+    async def get_server_tools(self) -> List[Dict[str, Any]]:
+        """Get and display available tools from the MCP server."""
+        logger.info("Fetching available tools from server...")
+        
+        try:
+            if self.transport == "http":
+                # Use HTTP streamable client for connection
+                async with streamablehttp_client(self.server_url) as (read_stream, write_stream, _):
+                    async with ClientSession(read_stream, write_stream) as session:
+                        return await self._get_tools(session)
+            else:
+                # Use stdio client for connection
+                async with stdio_client(self.server_params) as (read_stream, write_stream):
+                    async with ClientSession(read_stream, write_stream) as session:
+                        return await self._get_tools(session)
+                        
+        except Exception as e:
+            logger.error(f"❌ Failed to fetch tools: {str(e)}")
+            return []
+
+    async def _get_tools(self, session: ClientSession) -> List[Dict[str, Any]]:
+        """Get tools through MCP session."""
+        try:
+            # Initialize MCP protocol connection
+            await session.initialize()
+            
+            # List available tools
+            tools_result = await session.list_tools()
+            
+            logger.info(f"DEBUG: Tools result type: {type(tools_result)}")
+            logger.info(f"DEBUG: Tools result: {tools_result}")
+            
+            if tools_result and tools_result.tools:
+                tools_list = []
+                for tool in tools_result.tools:
+                    tool_info = {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "input_schema": getattr(tool, 'inputSchema', {})
+                    }
+                    tools_list.append(tool_info)
+                
+                # Display tools in a nice format
+                self._display_tools(tools_list)
+                return tools_list
+            else:
+                logger.warning("⚠️ No tools returned from server")
+                return []
+                
+        except Exception as e:
+            logger.error(f"❌ Tools listing session failed: {str(e)}")
+            return []
+
+    def _display_tools(self, tools: List[Dict[str, Any]]):
+        """Display available tools in a formatted way."""
+        print("\n" + "="*70)
+        print("AVAILABLE SIGNAL SERVER TOOLS")
+        print("="*70)
+        
+        for i, tool in enumerate(tools, 1):
+            print(f"\n🔧 Tool {i}: {tool['name']}")
+            print(f"   Description: {tool['description']}")
+            
+            # Display input schema if available
+            if tool.get('input_schema') and isinstance(tool['input_schema'], dict):
+                properties = tool['input_schema'].get('properties', {})
+                if properties:
+                    print("   Parameters:")
+                    for param_name, param_info in properties.items():
+                        param_type = param_info.get('type', 'unknown')
+                        param_desc = param_info.get('description', 'No description')
+                        required_marker = " (required)" if param_name in tool['input_schema'].get('required', []) else ""
+                        print(f"     • {param_name} ({param_type}){required_marker}: {param_desc}")
+        
+        print("="*70 + "\n")
     
     async def process_failure_event(self, event_data: Dict[str, Any]) -> Dict[str, Any]:
         """Process failure event through Signal Server analysis pipeline."""
@@ -255,7 +332,7 @@ class SignalAgent:
     
     async def run_demo(self):
         """Execute complete Signal Agent demonstration workflow."""
-        logger.info(f"🚀 Starting Signal Agent Demo (MCP SDK - {self.transport} transport)")
+        logger.info(f"🚀 Running Signal Agent Demo (MCP SDK - {self.transport} transport)")
         
         # Step 1: Connect to server via selected transport
         if not await self.connect():
@@ -291,6 +368,56 @@ class SignalAgent:
             logger.info("🎉 MCP demo completed successfully")
         else:
             logger.error("❌ MCP demo failed during event processing")
+
+    def show_menu(self):
+        """Display the main menu options."""
+        print("\n" + "="*50)
+        print("SIGNAL AGENT - MCP CLIENT")
+        print("="*50)
+        print("1️⃣  Run Demo")
+        print("2️⃣  Get Server Tools & Descriptions")
+        print("3️⃣  Exit")
+        print("="*50)
+
+    async def run_interactive(self):
+        """Run the agent in interactive menu mode."""
+        logger.info(f"🚀 Starting Signal Agent Interactive Mode (MCP SDK - {self.transport} transport)")
+        
+        # First, establish connection
+        if not await self.connect():
+            logger.error("❌ Cannot establish MCP connection to server")
+            print("❌ Failed to connect to server. Please ensure server is running.")
+            return
+
+        while True:
+            self.show_menu()
+            
+            try:
+                choice = input("\n👉 Select an option (1-3): ").strip()
+                
+                if choice == "1":
+                    print("\n🔄 Running demo...")
+                    await self.run_demo()
+                    
+                elif choice == "2":
+                    print("\n🔄 Fetching server tools...")
+                    tools = await self.get_server_tools()
+                    if not tools:
+                        print("❌ No tools found or failed to fetch tools")
+                    
+                elif choice == "3":
+                    print("\n👋 Exiting Signal Agent...")
+                    break
+                    
+                else:
+                    print("❌ Invalid choice. Please select 1, 2, or 3.")
+                    
+            except KeyboardInterrupt:
+                print("\n\n👋 Exiting Signal Agent...")
+                break
+            except Exception as e:
+                logger.error(f"❌ Menu error: {str(e)}")
+                print(f"❌ An error occurred: {str(e)}")
     
     async def close(self):
         """Clean up agent resources and close connections."""
@@ -306,13 +433,20 @@ async def main():
                       help="Transport mode (stdio or http)")
     parser.add_argument("--server-url", default="http://localhost:8000/mcp",
                       help="Server URL for HTTP transport")
+    parser.add_argument("--demo", action="store_true",
+                      help="Run demo directly without menu")
     
     args = parser.parse_args()
     
-    # Create and run agent
+    # Create agent
     agent = SignalAgent(transport=args.transport, server_url=args.server_url)
     try:
-        await agent.run_demo()
+        if args.demo:
+            # Run demo directly (backwards compatibility)
+            await agent.run_demo()
+        else:
+            # Run interactive menu
+            await agent.run_interactive()
     finally:
         await agent.close()
 
