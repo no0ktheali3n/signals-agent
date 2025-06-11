@@ -3,13 +3,14 @@
 Signal System Main Orchestrator
 
 This module provides the main entry point and orchestration for the complete
-Signal System, coordinating the dual-transport MCP server and Signal Agent for failure
-event processing and analysis.
+Signal System, coordinating the dual-transport MCP server, Signal Agent, and Problem Maker
+for failure event processing and analysis.
 
 The orchestrator supports multiple deployment modes:
 - Full Demo: Integrated server and agent demonstration
 - Server Only: Standalone MCP server for external clients
 - Agent Only: Standalone client connecting to existing server
+- Problem Maker Only: Standalone event generator for testing
 
 Transport: Supports both stdio (development) and HTTP streamable (production)
 Architecture: Microservice pattern with clear separation of concerns and transport flexibility
@@ -19,6 +20,8 @@ import asyncio
 import logging
 import sys
 import argparse
+import subprocess
+import os
 
 from agent.signal_agent import SignalAgent
 from server.server import SignalServer
@@ -78,8 +81,8 @@ class SignalOrchestrator:
         logger.info(f"🔧 Starting Signal Server (background mode) with {self.transport} transport")
         try:
             # Import and use the async serve function directly
-            from server.server import serve_async
-            await serve_async(self.transport)
+            from server.server import serve
+            await serve(self.transport)
         except Exception as e:
             logger.error(f"Server startup failed: {str(e)}")
     
@@ -202,17 +205,17 @@ async def run_server_only(transport: str = "stdio"):
     logger.info(f"🔧 Starting Signal Server (standalone mode) with {transport} transport")
     
     if transport == "http":
-        logger.info("🌐 HTTP Server will be available at: http://localhost:8000/mcp")
-        logger.info("📋 Connect clients to: http://localhost:8000/mcp")
+        logger.info("🌐 HTTP Server will be available at: http://127.0.0.1:8000")
+        logger.info("📋 Connect clients to: http://127.0.0.1:8000")
     else:
         logger.info("📋 Server ready for stdio connections (MCP Inspector compatible)")
         logger.info("🔍 Test with: npx @modelcontextprotocol/inspector python server/server.py")
     
-    # Import and use the async serve function directly
-    from server.server import serve_async
-    await serve_async(transport)
+    # Import and use the serve function that exists in the current server module
+    from server.server import serve
+    await serve(transport)
 
-async def run_agent_only(transport: str = "stdio", server_url: str = "http://localhost:8000/mcp"):
+async def run_agent_only(transport: str = "stdio", server_url: str = "http://127.0.0.1:8000/mcp"):
     """
     Run Signal Agent in standalone mode connecting to existing server.
     
@@ -241,9 +244,58 @@ async def run_agent_only(transport: str = "stdio", server_url: str = "http://loc
     
     agent = SignalAgent(transport=transport, server_url=server_url)
     try:
-        await agent.run_demo()
+        await agent.run_interactive()
     finally:
         await agent.close()
+
+async def run_problem_maker_only(count: int = 20, delay: float = 1.5, agent_url: str = "http://localhost:8001"):
+    """
+    Run Problem Maker in standalone mode for testing event generation.
+    
+    Generates realistic failure events and sends them to Signal Agent via HTTP POST.
+    Useful for testing agent HTTP listener functionality and event processing pipelines.
+    
+    Use Cases:
+    - Testing agent HTTP listener functionality
+    - Load testing event processing pipeline
+    - Development and debugging scenarios
+    - Automated testing workflows
+    
+    Prerequisites:
+    - Signal Agent must be running with HTTP listener active (menu option 4)
+    - Agent HTTP listener should be available at specified URL
+    """
+    logger.info(f"🚨 Starting Problem Maker (standalone mode)")
+    logger.info(f"📊 Generating {count} events with {delay}s delay")
+    logger.info(f"🎯 Target Agent URL: {agent_url}")
+    logger.info("⚠️  Ensure Signal Agent HTTP listener is running (menu option 4)")
+    
+    try:
+        # Use subprocess to mimic exact command: python agent/problem_maker.py
+        cmd = [
+            sys.executable,
+            os.path.join("agent", "problem_maker.py"),
+            f"--count={count}",
+            f"--delay={delay}",
+            f"--agent-url={agent_url}"
+        ]
+        
+        logger.info(f"Running command: {' '.join(cmd)}")
+        
+        result = subprocess.run(
+            cmd, 
+            text=True, 
+            encoding='utf-8',
+            cwd=os.getcwd()
+        )
+        
+        if result.returncode == 0:
+            logger.info("✅ Problem Maker completed successfully")
+        else:
+            logger.error(f"❌ Problem Maker failed with exit code: {result.returncode}")
+            
+    except Exception as e:
+        logger.error(f"Problem Maker execution failed: {str(e)}")
 
 # =============================================================================
 # COMMAND LINE INTERFACE
@@ -257,25 +309,35 @@ def main():
     different configurations based on deployment requirements.
     
     Usage Examples:
-    - python main.py                              : Full demo (stdio)
-    - python main.py --transport http             : Full demo (HTTP)
-    - python main.py server                       : Server only (stdio)
-    - python main.py server --transport http      : Server only (HTTP)
-    - python main.py agent                        : Agent only (stdio)
-    - python main.py agent --transport http       : Agent only (HTTP)
-    - python main.py demo --transport http        : Explicit demo (HTTP)
+    - python main.py                                    : Full demo (stdio)
+    - python main.py --transport http                   : Full demo (HTTP)
+    - python main.py server                             : Server only (stdio)
+    - python main.py server --transport http            : Server only (HTTP)
+    - python main.py agent                              : Agent only (stdio)
+    - python main.py agent --transport http             : Agent only (HTTP)
+    - python main.py problem-maker                      : Problem Maker only
+    - python main.py problem-maker --count 30 --delay 1.0 : Custom Problem Maker
+    - python main.py demo --transport http              : Explicit demo (HTTP)
     
     Transport Modes:
     - stdio: Development, testing, MCP Inspector compatibility
     - http:  Production, distributed systems, network deployment
     """
-    parser = argparse.ArgumentParser(description="Signal System - Dual Transport MCP Server/Agent")
-    parser.add_argument("mode", nargs="?", choices=["server", "agent", "demo"], default="demo",
-                      help="Operation mode (server, agent, or demo)")
+    parser = argparse.ArgumentParser(description="Signal System - Dual Transport MCP Server/Agent/Problem Maker")
+    parser.add_argument("mode", nargs="?", 
+                       choices=["server", "agent", "problem-maker", "demo"], 
+                       default="demo",
+                       help="Operation mode")
     parser.add_argument("--transport", choices=["stdio", "http"], default="stdio",
-                      help="Transport mode (stdio for development, http for production)")
-    parser.add_argument("--server-url", default="http://localhost:8000/mcp",
-                      help="Server URL for HTTP transport (default: http://localhost:8000/mcp)")
+                       help="Transport mode (stdio for development, http for production)")
+    parser.add_argument("--server-url", default="http://127.0.0.1:8000/mcp",
+                       help="Server URL for HTTP transport")
+    parser.add_argument("--agent-url", default="http://localhost:8001", 
+                       help="Agent URL for Problem Maker")
+    parser.add_argument("--count", type=int, default=20,
+                       help="Number of events for Problem Maker")
+    parser.add_argument("--delay", type=float, default=1.5,
+                       help="Delay between events for Problem Maker")
     
     args = parser.parse_args()
     
@@ -293,7 +355,7 @@ def main():
         print(f"🔧 Server-only mode with {args.transport} transport")
         if args.transport == "http":
             print("🌐 Production HTTP streamable server")
-            print("📋 Clients can connect via HTTP to /mcp endpoint")
+            print("📋 Clients can connect via HTTP")
         else:
             print("📋 Development stdio server")
             print("🔍 Compatible with MCP Inspector and stdio clients")
@@ -312,6 +374,16 @@ def main():
         print("-" * 70)
         
         asyncio.run(run_agent_only(args.transport, args.server_url))
+        
+    elif args.mode == "problem-maker":
+        # Problem Maker only mode
+        print(f"🚨 Problem Maker-only mode")
+        print(f"📊 Generating {args.count} events with {args.delay}s delay")
+        print(f"🎯 Target: {args.agent_url}")
+        print("⚠️  Ensure Signal Agent HTTP listener is running (menu option 4)")
+        print("-" * 70)
+        
+        asyncio.run(run_problem_maker_only(args.count, args.delay, args.agent_url))
         
     else:
         # Demo mode (default)
