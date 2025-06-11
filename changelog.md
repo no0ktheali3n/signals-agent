@@ -5,7 +5,59 @@ All notable changes to Signal Agent will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.0] - 2024-12-11
+## [1.4.1] - 2025-6-11
+
+### 🔧 Enhanced
+- **Main Controller Refactoring** - Improved code organization and maintainability
+- **Code Quality** - General refactoring for better structure and readability
+
+## [1.4.0] - 2025-6-10
+
+### 🚀 Added
+- **Agent HTTP Listener** - New HTTP endpoint for receiving agent requests
+- **Problem Maker** - New Problem Generator module for...
+- **HTTP POST Problem Simulation** - Enhanced testing capabilities for HTTP transport
+
+### 🔧 Enhanced
+- **Codebase Cleanup** - Removed redundancies and reduced bloat for better performance
+- **Architecture Optimization** - Streamlined components for improved efficiency
+
+### 🐛 Fixed
+- **HTTP Transport Issues** - Resolved various HTTP-related connectivity problems
+
+## [1.3.0] - 2025-6-8
+
+### 🚀 Added
+- **Autonomous Agent Listener Mode** - Pre-release implementation for independent agent operation
+- **Manual Input Support** - Direct input capabilities for testing and development
+
+### 🔧 Enhanced
+- **Agent Independence** - Improved autonomous operation capabilities
+- **Input Flexibility** - Multiple input methods for different use cases
+
+### 📋 Technical Details
+- Enhanced agent architecture for standalone operation
+- Improved input handling and processing pipeline
+- Pre-release autonomous features for future MSP integration
+
+## [1.2.0] - 2025-6-8
+
+### 🚀 Added
+- **Interactive Agent Menu** - User-friendly interface for agent interaction
+- **Enhanced User Experience** - Streamlined workflow for operational teams
+
+### 🔧 Enhanced
+- **Interface Design** - Improved usability and navigation
+- **Workflow Optimization** - Simplified agent interaction patterns
+
+### 📋 Technical Details
+- Interactive menu system implementation
+- Improved user interface components
+- Enhanced agent-user interaction patterns
+
+---
+
+## [1.1.0] - 2025-6-6
 
 ### 🚀 Added
 - **HTTP Streamable Transport Support** - Full production-ready HTTP transport using FastMCP
@@ -42,7 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.0.0] - 2024-12-11
+## [1.0.0] - 2025-6-2
 
 ### 🎉 Initial Release
 
@@ -106,10 +158,11 @@ Signal Agent follows [Semantic Versioning](https://semver.org/):
 
 ### Upcoming Versions
 
-**v1.2.0** - Enhanced Monitoring Integration
-- Multiple monitoring tool connectors (Sentry, Datadog, Raygun)
-- Advanced pattern recognition
+**v1.5.0+** - Advanced Capabilities and Monitoring
+- Table / DB storage for Event data
+- LLM interface that allows user to query server using natural language
 - Historical trend analysis
+- Enhanced autonomous agent capabilities
 
 **v2.0.0** - TriAgent Evolution  
 - Production MSP deployment features
