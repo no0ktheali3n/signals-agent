@@ -1,9 +1,9 @@
-# problem_maker/problem_maker.py
+# agent/chaos_agent.py
 """
-Problem Maker - Realistic Failure Event Generator
+Chaos Agent - Agent of Chaos
 
-Generates diverse failure scenarios and sends them to Signal Agent via HTTP POST.
-Simulates real-world system failures with enhanced realism and contextual metadata.
+Generates diverse failure scenarios and sends JSON events to Signal Agent via HTTP POST.
+Intended to simulate real-world system failures with enhanced realism and contextual metadata.
 
 Features:
 - Enhanced failure scenarios with dynamic metadata
@@ -68,7 +68,7 @@ SERVICES = {
 # PROBLEM MAKER
 # =============================================================================
 
-class ProblemMaker:
+class ChaosAgent:
     """
     Generates realistic failure events and sends them to Signal Agent.
     
@@ -437,7 +437,7 @@ async def main():
     parser.add_argument("--health", action="store_true", help="Check Agent health and exit")
     
     args = parser.parse_args()
-    problem_maker = ProblemMaker(agent_url=args.agent_url)
+    problem_maker = ChaosAgent(agent_url=args.agent_url)
     
     try:
         if args.health:

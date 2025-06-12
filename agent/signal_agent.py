@@ -11,6 +11,7 @@ Features:
 - HTTP listener for external event ingestion
 - Input validation and schema enforcement
 - Interactive and automated processing modes
+- Future LLM interface 
 """
 
 import asyncio

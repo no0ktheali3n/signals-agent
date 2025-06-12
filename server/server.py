@@ -10,6 +10,7 @@ Features:
 - Intelligent failure classification and severity assessment
 - Automated recommendation generation
 - Health monitoring and status verification
+- Database interactions for event storage and retrieval
 """
 
 import asyncio
