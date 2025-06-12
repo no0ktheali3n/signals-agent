@@ -312,7 +312,9 @@ class ProblemMaker:
         
         # Generate event
         self.event_counter += 1
-        event_id = f"{selected_scenario.scenario_id}_{self.event_counter:04d}"
+        # Generate unique event IDs with timestamp
+        timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]  # microseconds to milliseconds
+        event_id = f"{selected_scenario.scenario_id}_{self.event_counter:04d}_{timestamp_str}"
         
         # Realistic timing with slight variance
         time_offset = random.choice([0, 0, 0, 0, 15, 30, 120])  # Mostly current

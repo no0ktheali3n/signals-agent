@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.4.1] - 2025-6-11
 
 ### 🔧 Enhanced
-- **Main Controller Refactoring** - Improved code organization and maintainability
+- **Main Controller Refactoring** - Improved code organization and maintainability + added args for problem maker
 - **Code Quality** - General refactoring for better structure and readability
 
 ## [1.4.0] - 2025-6-10

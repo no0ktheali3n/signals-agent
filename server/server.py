@@ -16,7 +16,7 @@ import asyncio
 import json
 import logging
 from typing import Any, Dict, List
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # MCP imports - organized at top
 from mcp.server import Server
@@ -24,26 +24,19 @@ from mcp.server.stdio import stdio_server
 from mcp.server.fastmcp import FastMCP
 from mcp.types import TextContent, Tool
 
+# database imports
+from database import EventDatabase
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# database instance
+db = EventDatabase("signal_events.db")
+
 # =============================================================================
 # MODELS & SCHEMAS
 # =============================================================================
-
-class FailureEventParameters(BaseModel):
-    """Input schema for classify_failure_event tool."""
-    event_id: str
-    timestamp: str
-    service: str
-    severity: str
-    message: str
-    details: Dict[str, Any] = {}
-
-class HealthCheckInput(BaseModel):
-    """Input schema for health_check tool."""
-    pass
 
 class FailureEvent(BaseModel):
     """Structured failure event model for internal processing."""
@@ -54,6 +47,35 @@ class FailureEvent(BaseModel):
     message: str
     details: Dict[str, Any] = {}
 
+class FailureEventParameters(BaseModel):
+    """Input schema for classify_failure_event tool."""
+    event_id: str = Field(..., description="Unique identifier for the failure event")
+    timestamp: str = Field(..., description="ISO 8601 formatted timestamp when event occurred")
+    service: str = Field(..., description="Name of the affected service or system")
+    severity: str = Field(..., description="Event severity level: critical, warning, or info")
+    message: str = Field(..., description="Human-readable description of the failure")
+    details: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata and context")
+
+class HealthCheckInput(BaseModel):
+    """Input schema for health_check tool."""
+    # No parameters needed - health check is parameter-free
+    pass
+
+class QueryEventsTodayInput(BaseModel):
+    """Input schema for query_events_today tool."""
+    # No parameters needed - automatically queries today's events
+    pass
+
+class QueryEventsSummaryInput(BaseModel):
+    """Input schema for query_events_summary tool."""
+    days: int = Field(default=1, description="Number of days to include in summary (default: 1)")
+
+class QueryEventsByServiceInput(BaseModel):
+    """Input schema for query_events_by_service tool."""
+    service: str = Field(..., description="Name of the service to query events for")
+    days: int = Field(default=7, description="Number of days to look back (default: 7)")
+
+    
 # =============================================================================
 # CORE ANALYSIS ENGINE
 # =============================================================================
@@ -137,11 +159,11 @@ class FailureAnalyzer:
     def _format_summary(cls, event: FailureEvent, classification: str, recommendation: str) -> str:
         """Format human-readable event analysis summary."""
         return f"""🚨 Signal Alert: {event.event_id}
-Service: {event.service}
-Type: {classification.replace('_', ' ').title()}
-Message: {event.message}
-Action: {recommendation}
-Time: {event.timestamp}""".strip()
+            Service: {event.service}
+            Type: {classification.replace('_', ' ').title()}
+            Message: {event.message}
+            Action: {recommendation}
+            Time: {event.timestamp}""".strip()
 
 # =============================================================================
 # TOOL IMPLEMENTATIONS
@@ -150,12 +172,10 @@ Time: {event.timestamp}""".strip()
 async def process_failure_event(event_id: str, timestamp: str, service: str, 
                                severity: str, message: str, details: Dict[str, Any] = None) -> Dict[str, Any]:
     """
-    Core failure event processing function used by both transports.
-    
-    Centralizes all event processing logic to ensure consistency.
+    Core failure event processing function used by both transports w/ database storage.
     """
     try:
-        # Create event object
+        # Create event object (existing code)
         event = FailureEvent(
             event_id=event_id,
             timestamp=timestamp,
@@ -167,8 +187,24 @@ async def process_failure_event(event_id: str, timestamp: str, service: str,
         
         logger.info(f"Processing event: {event.event_id} ({event.service})")
         
-        # Analyze event through centralized engine
+        # Analyze event through centralized engine (existing code)
         result = await FailureAnalyzer.analyze_event(event)
+        
+        # *** NEW: Store in database ***
+        event_data = {
+            "event_id": event_id,
+            "timestamp": timestamp,
+            "service": service,
+            "severity": severity,
+            "message": message,
+            "details": details or {}
+        }
+        
+        storage_success = db.store_event(event_data, result)
+        if storage_success:
+            logger.info(f"✅ Event stored in database: {event.event_id}")
+        else:
+            logger.warning(f"⚠️ Database storage failed for: {event.event_id}")
         
         logger.info(f"Analysis complete: {event.event_id} -> {result['classification']} ({result['calculated_severity']})")
         return result
@@ -205,12 +241,28 @@ async def serve_stdio() -> None:
             Tool(
                 name="classify_failure_event",
                 description="Analyze and classify failure events with intelligent recommendations",
-                inputSchema=FailureEventParameters.schema()
+                inputSchema=FailureEventParameters.model_json_schema()
             ),
             Tool(
                 name="health_check",
                 description="Server health and status verification",
-                inputSchema=HealthCheckInput.schema()
+                inputSchema=HealthCheckInput.model_json_schema()
+            ),
+            # *** NEW DATABASE QUERY TOOLS ***
+            Tool(
+                name="query_events_today",
+                description="Get all events from today with basic analysis",
+                inputSchema=QueryEventsTodayInput.model_json_schema()
+            ),
+            Tool(
+                name="query_events_summary",
+                description="Get summary statistics for recent events",
+                inputSchema=QueryEventsSummaryInput.model_json_schema()
+            ),
+            Tool(
+                name="query_events_by_service",
+                description="Get recent events for a specific service",
+                inputSchema=QueryEventsByServiceInput.model_json_schema()
             )
         ]
 
@@ -245,11 +297,49 @@ async def serve_stdio() -> None:
             elif name == "health_check":
                 result = await health_check()
                 result["transport"] = "stdio"
+
+            # *** DATABASE QUERY TOOLS ***
+            elif name == "query_events_today":
+                events = db.query_events_today()
+                summary = db.get_summary_stats(days=1)
+                
+                result = {
+                    "events_today": len(events),
+                    "summary": summary,
+                    "events": events[:10] if len(events) > 10 else events,  # Limit to 10 for readability
+                    "showing": "latest 10" if len(events) > 10 else "all events"
+                }
+                return [TextContent(type="text", text=json.dumps(result, indent=2))]
+                
+            elif name == "query_events_summary":
+                days = arguments.get("days", 1)
+                summary = db.get_summary_stats(days=days)
+                
+                result = {
+                    "period": f"last {days} day(s)",
+                    "summary": summary
+                }
+                return [TextContent(type="text", text=json.dumps(result, indent=2))]
+                
+            elif name == "query_events_by_service":
+                service = arguments.get("service")
+                days = arguments.get("days", 7)
+                
+                if not service:
+                    raise ValueError("service parameter is required")
+                    
+                events = db.query_events_by_service(service, days)
+                
+                result = {
+                    "service": service,
+                    "period": f"last {days} day(s)",
+                    "event_count": len(events),
+                    "events": events
+                }
+                return [TextContent(type="text", text=json.dumps(result, indent=2))]
                 
             else:
                 raise ValueError(f"Unknown tool: {name}")
-            
-            return [TextContent(type="text", text=json.dumps(result, indent=2))]
             
         except Exception as e:
             logger.error(f"Tool execution failed: {str(e)}")
@@ -285,36 +375,9 @@ def serve_http_sync() -> None:
         Processes failure events through multi-stage analysis pipeline providing
         severity assessment, operational classification, and response recommendations.
         """
-        try:
-            # Handle optional details parameter
-            if details is None:
-                details = {}
-            
-            # Create event object directly
-            event = FailureEvent(
-                event_id=event_id,
-                timestamp=timestamp,
-                service=service,
-                severity=severity,
-                message=message,
-                details=details
-            )
-            
-            logger.info(f"Processing event: {event.event_id}")
-            
-            # Analyze event through centralized engine
-            result = await FailureAnalyzer.analyze_event(event)
-            
-            logger.info(f"Analysis complete: {event.event_id} -> {result['classification']} ({result['calculated_severity']})")
-            return result
-            
-        except Exception as e:
-            logger.error(f"Event processing failed: {str(e)}")
-            return {
-                "error": str(e),
-                "status": "failed",
-                "event_id": event_id
-            }
+
+        # Use the shared process_failure_event function that has database storage
+        return await process_failure_event(event_id, timestamp, service, severity, message, details)
 
     @mcp.tool()
     async def health_check() -> dict:
@@ -325,6 +388,65 @@ def serve_http_sync() -> None:
             "transport": "http-streamable",
             "message": "Signal server operational"
         }
+    
+    @mcp.tool()
+    async def query_events_today() -> dict:
+        """Get all events from today with basic analysis for monitoring and review."""
+        try:
+            events = db.query_events_today()
+            summary = db.get_summary_stats(days=1)
+            
+            return {
+                "events_today": len(events),
+                "summary": summary,
+                "events": events[:10] if len(events) > 10 else events,
+                "showing": "latest 10" if len(events) > 10 else "all events",
+                "status": "success"
+            }
+        except Exception as e:
+            logger.error(f"Query events today failed: {str(e)}")
+            return {
+                "error": str(e),
+                "status": "failed"
+            }
+
+    @mcp.tool()
+    async def query_events_summary(days: int = 1) -> dict:
+        """Get summary statistics for recent events over specified time period."""
+        try:
+            summary = db.get_summary_stats(days=days)
+            
+            return {
+                "period": f"last {days} day(s)",
+                "summary": summary,
+                "status": "success"
+            }
+        except Exception as e:
+            logger.error(f"Query events summary failed: {str(e)}")
+            return {
+                "error": str(e),
+                "status": "failed"
+            }
+
+    @mcp.tool()
+    async def query_events_by_service(service: str, days: int = 7) -> dict:
+        """Get recent events for a specific service over specified time period."""
+        try:
+            events = db.query_events_by_service(service, days)
+            
+            return {
+                "service": service,
+                "period": f"last {days} day(s)",
+                "event_count": len(events),
+                "events": events,
+                "status": "success"
+            }
+        except Exception as e:
+            logger.error(f"Query events by service failed: {str(e)}")
+            return {
+                "error": str(e),
+                "status": "failed"
+            }
 
     # Start FastMCP server - restore working API call
     mcp.run("streamable-http")

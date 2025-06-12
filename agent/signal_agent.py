@@ -429,74 +429,181 @@ class SignalAgent:
     # INTERACTIVE MODES
     # =============================================================================
 
-    async def listen_for_events(self):
-        """Interactive listener mode for manual JSON input."""
-        logger.info("🎧 Starting Event Listener Mode")
-        print(f"\n{'='*60}\nEVENT LISTENER - MANUAL INPUT MODE\n{'='*60}")
-        print("📋 Paste JSON failure event data below")
-        print("💡 Type 'help' for schema • 'exit' to return")
-        print("📝 Multi-line JSON supported - end with empty line")
+    async def test_database_tools(self):
+        """Interactive database tools testing mode."""
+        logger.info("🔍 Starting Database Tools Testing Mode")
+        print(f"\n{'='*60}\nDATABASE TOOLS TESTING MODE\n{'='*60}")
+        print("Available commands:")
+        print("  1. today        - Query today's events")
+        print("  2. summary      - Get event summary (optionally specify days)")
+        print("  3. service      - Query events by service name")
+        print("  4. help         - Show this help")
+        print("  5. exit         - Return to main menu")
         print("="*60)
         
         while True:
             try:
-                print("\n📥 Waiting for failure event JSON input:")
-                print(">>> (paste JSON, press Enter twice when done)")
+                command = input("\n🔍 Enter command (1-5 or name): ").strip().lower()
                 
-                # Collect multi-line input
-                lines = []
-                while True:
-                    try:
-                        line = input()
-                        if line.strip() == "":
-                            break
-                        lines.append(line)
-                    except EOFError:
-                        break
-                
-                user_input = "\n".join(lines).strip()
-                
-                if user_input.lower() == 'exit':
-                    print("👋 Exiting event listener mode...")
+                if command in ['exit', '5']:
+                    print("👋 Exiting database tools testing...")
                     break
-                elif user_input.lower() == 'help':
-                    self.display_schema_help()
+                elif command in ['help', '4']:
+                    print("\nAvailable commands:")
+                    print("  today    - Shows all events from today")
+                    print("  summary  - Shows summary stats (default: 1 day)")
+                    print("  service  - Shows events for specific service")
                     continue
-                elif not user_input:
-                    print("⚠️ Empty input. Paste JSON data or type 'help' for schema.")
-                    continue
-                
-                # Process event
-                validated_event = self.validate_event(user_input)
-                if not validated_event:
-                    print("❌ Event rejected. Type 'help' for schema.")
-                    continue
-                
-                print(f"\n🔄 Processing event: {validated_event['event_id']}")
-                result = await self.process_failure_event(validated_event)
-                
-                if result and result.get("status") == "processed":
-                    print("✅ Event processed successfully!")
-                    print(f"📊 Classification: {result.get('classification', 'unknown')}")
-                    print(f"⚠️ Severity: {result.get('calculated_severity', 'unknown')}")
-                    print(f"💡 Recommendation: {result.get('recommendation', 'none')}")
-                    
-                    if input("\n📋 Show full result? (y/N): ").strip().lower() in ['y', 'yes']:
-                        print(f"\n{'='*50}\nFULL ANALYSIS RESULT\n{'='*50}")
-                        print(json.dumps(result, indent=2))
-                        print("="*50)
+                elif command in ['today', '1']:
+                    await self._test_query_events_today()
+                elif command in ['summary', '2']:
+                    days = input("Enter number of days (default 1): ").strip()
+                    try:
+                        days = int(days) if days else 1
+                    except ValueError:
+                        days = 1
+                    await self._test_query_events_summary(days)
+                elif command in ['service', '3']:
+                    service = input("Enter service name: ").strip()
+                    if not service:
+                        print("❌ Service name is required")
+                        continue
+                    days = input("Enter number of days (default 7): ").strip()
+                    try:
+                        days = int(days) if days else 7
+                    except ValueError:
+                        days = 7
+                    await self._test_query_events_by_service(service, days)
                 else:
-                    print("❌ Event processing failed")
-                    if 'error' in result:
-                        print(f"Error: {result['error']}")
-                
+                    print("❌ Invalid command. Type 'help' for available commands.")
+                    
             except KeyboardInterrupt:
-                print("\n👋 Exiting event listener mode...")
+                print("\n👋 Exiting database tools testing...")
                 break
             except Exception as e:
-                logger.error(f"❌ Listener error: {str(e)}")
+                logger.error(f"❌ Command error: {str(e)}")
                 print(f"❌ Error: {str(e)}")
 
+    async def _test_query_events_today(self):
+        """Test the query_events_today tool."""
+        print("\n🔄 Querying today's events...")
+        
+        async def tool_operation(session):
+            result = await session.call_tool("query_events_today", {})
+            return result
+        
+        result = await self._execute_with_session(tool_operation)
+
+        if result and result.content:
+            response_text = "".join(
+                content.text if hasattr(content, 'text') else str(content)
+                for content in result.content
+            )
+            
+            try:
+                data = json.loads(response_text)
+                print(f"\n📊 TODAY'S EVENTS SUMMARY:")
+                print(f"Total events today: {data.get('events_today', 0)}")
+                
+                summary = data.get('summary', {})
+                if summary:
+                    print(f"Critical: {summary.get('critical_count', 0)}")
+                    print(f"Warning: {summary.get('warning_count', 0)}")
+                    print(f"Info: {summary.get('info_count', 0)}")
+                    print(f"Affected services: {summary.get('affected_services', 0)}")
+                
+                events = data.get('events', [])
+                if events:
+                    print(f"\n📋 EVENTS ({data.get('showing', 'all events')}):")
+                    for i, event in enumerate(events, 1):
+                        print(f"  {i}. {event.get('event_id', 'unknown')} | {event.get('service', 'unknown')} | {event.get('calculated_severity', 'unknown').upper()}")
+                        print(f"     {event.get('message', 'No message')}")
+                else:
+                    print("\n📋 No events found for today")
+                    
+            except json.JSONDecodeError:
+                print(f"Raw response: {response_text}")
+        else:
+            print("❌ No response from server")
+
+    async def _test_query_events_summary(self, days: int = 1):
+        """Test the query_events_summary tool."""
+        print(f"\n🔄 Getting summary for last {days} day(s)...")
+        
+        async def tool_operation(session):
+            result = await session.call_tool("query_events_summary", {"days": days})
+            return result
+        
+        result = await self._execute_with_session(tool_operation)
+        if result and result.content:
+            response_text = "".join(
+                content.text if hasattr(content, 'text') else str(content)
+                for content in result.content
+            )
+            
+            try:
+                data = json.loads(response_text)
+                summary = data.get('summary', {})
+                
+                print(f"\n📊 SUMMARY FOR {data.get('period', f'last {days} day(s)')}:")
+                print(f"Total events: {summary.get('total_events', 0)}")
+                print(f"Critical: {summary.get('critical_count', 0)}")
+                print(f"Warning: {summary.get('warning_count', 0)}")
+                print(f"Info: {summary.get('info_count', 0)}")
+                print(f"Affected services: {summary.get('affected_services', 0)}")
+                
+                top_services = summary.get('top_services', [])
+                if top_services:
+                    print(f"\n🔥 TOP AFFECTED SERVICES:")
+                    for service in top_services:
+                        print(f"   {service.get('service', 'unknown')}: {service.get('event_count', 0)} events")
+                        
+            except json.JSONDecodeError:
+                print(f"Raw response: {response_text}")
+        else:
+            print("❌ No response from server")
+
+    async def _test_query_events_by_service(self, service: str, days: int = 7):
+        """Test the query_events_by_service tool."""
+        print(f"\n🔄 Querying events for service '{service}' over last {days} day(s)...")
+        
+        async def tool_operation(session):
+            result = await session.call_tool("query_events_by_service", {
+                "service": service,
+                "days": days
+            })
+            return result
+        
+        result = await self._execute_with_session(tool_operation)
+        if result and result.content:
+            response_text = "".join(
+                content.text if hasattr(content, 'text') else str(content)
+                for content in result.content
+            )
+            
+            try:
+                data = json.loads(response_text)
+                
+                print(f"\n📊 EVENTS FOR SERVICE: {data.get('service', service)}")
+                print(f"Period: {data.get('period', f'last {days} day(s)')}")
+                print(f"Event count: {data.get('event_count', 0)}")
+                
+                events = data.get('events', [])
+                if events:
+                    print(f"\n📋 EVENT DETAILS:")
+                    for i, event in enumerate(events, 1):
+                        print(f"  {i}. {event.get('event_id', 'unknown')} | {event.get('calculated_severity', 'unknown').upper()}")
+                        print(f"     {event.get('message', 'No message')}")
+                        print(f"     Time: {event.get('timestamp', 'unknown')}")
+                        if i < len(events):
+                            print()
+                else:
+                    print(f"\n📋 No events found for service '{service}'")
+                    
+            except json.JSONDecodeError:
+                print(f"Raw response: {response_text}")
+        else:
+            print("❌ No response from server")
     # =============================================================================
     # TOOLS & DEMO
     # =============================================================================
@@ -540,7 +647,7 @@ class SignalAgent:
                 
                 for param_name, param_info in properties.items():
                     param_type = param_info.get('type', 'unknown')
-                    param_desc = param_info.get('description', 'No description')
+                    param_desc = param_info.get('description') or param_info.get('title', 'No description')
                     required_marker = " (required)" if param_name in required else ""
                     print(f"     • {param_name} ({param_type}){required_marker}: {param_desc}")
         
@@ -587,7 +694,7 @@ class SignalAgent:
         print(f"\n{'='*50}\nSIGNAL AGENT - MCP CLIENT\n{'='*50}")
         print("1️⃣  Run Demo")
         print("2️⃣  Get Server Tools & Descriptions") 
-        print("3️⃣  Event Listener (Manual Input Test)")
+        print("3️⃣  Test Database Tools (Manual Interaction)")
         print("4️⃣  HTTP Event Listener (External Events)")
         print("5️⃣  Exit")
         print("="*50)
@@ -615,7 +722,7 @@ class SignalAgent:
                     if not tools:
                         print("❌ No tools found or failed to fetch tools")
                 elif choice == "3":
-                    await self.listen_for_events()
+                    await self.test_database_tools()
                 elif choice == "4":
                     await self.listen_for_http_events()
                 elif choice == "5":
