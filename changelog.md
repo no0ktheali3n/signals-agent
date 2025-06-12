@@ -5,6 +5,43 @@ All notable changes to Signal Agent will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.2] - 2025-6-12
+
+### 🚀 Added
+- **Database Storage Layer** - SQLite integration for persistent event storage with zero external dependencies
+- **Database Query Tools** - Three new MCP tools for event data retrieval and analysis
+  - `query_events_today` - Retrieve events from the last 24 hours with summary statistics
+  - `query_events_summary` - Get aggregated statistics over configurable time periods
+  - `query_events_by_service` - Filter events by specific service names
+- **Interactive Database Testing** - Menu-driven interface for testing database query tools
+- **Database Viewer Utility** - Command-line tool for inspecting stored event data
+
+### 🔧 Enhanced
+- **Event Processing Pipeline** - Automatic database storage integrated into existing analysis workflow
+- **Agent Interface** - Replaced manual JSON input mode with comprehensive database tool testing
+- **Time-based Querying** - Flexible 24-hour rolling window approach to avoid timezone conflicts
+- **Tool Descriptions** - Improved MCP tool parameter descriptions using Pydantic Field annotations
+- **Database Schema** - Optimized indexes for common query patterns (timestamp, service, severity)
+
+### 🐛 Fixed
+- **SQLite Row Factory** - Resolved data conversion issues in summary statistics queries
+- **Schema Deprecation** - Updated from deprecated `.schema()` to `.model_json_schema()` for Pydantic compatibility
+- **Timezone Handling** - Switched from calendar-day filtering to relative time periods for consistent results
+- **Transport Consistency** - Unified database integration across both stdio and HTTP transports
+
+### 📋 Technical Details
+- Added `EventDatabase` class with comprehensive CRUD operations
+- Implemented `INSERT OR REPLACE` pattern for event deduplication
+- Enhanced event metadata with classification and recommendation storage
+- Created specialized query methods with proper SQL optimization
+- Integrated database operations into existing MCP server architecture
+
+### 🎯 Migration Notes
+- Database files are automatically created on first run (no setup required)
+- Existing event processing workflows remain unchanged (backwards compatible)
+- New database query tools available through agent interactive mode (option 3)
+- Events are now automatically persisted during processing pipeline
+
 ## [1.4.1] - 2025-6-11
 
 ### 🔧 Enhanced
