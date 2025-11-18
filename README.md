@@ -286,7 +286,7 @@ Now lets run another agent:
 just run-agent-http
 ```
 
-Now we can use agent as an MCP client to interact with our MCP server and consume tools from server. That allow us to query our signal_events.db
+Now we can use agent as an MCP client to interact with our MCP server and consume tools from server. That allows us to query our signal_events.db to return data about events in a command line interface.
 
 ### Code Quality
 - **Type hints** throughout codebase
