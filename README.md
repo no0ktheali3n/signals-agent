@@ -264,9 +264,29 @@ signal-agent/
 just run-inspector
 
 # Test HTTP server and agent
-just run-server-http &    # Background HTTP server
-just run-agent-http       # HTTP agent test
+just run-server-http &    # Background streamable-HTTP MCP server
+just run-agent-http       # streamable-HTTP agent test / listener 
 ```
+Our agent serves a two-fold purpose, as an HTTP listener for manual testing and an MCP client to interact with MCP server.
+
+To test manually, run agent and then select option 3 to start listener.
+
+Server runs on localhost:8000, listener runs on localhost:8001.
+
+To test manually (main orchestrator broken with latest update), run chaos_agent:
+
+```bash
+#runs chaos agent to run 10 events with 1.5 second delay between event
+python agent/chaos_agent.py --count 10 --delay 1.5
+```
+Events are stored locally in signals_events.db via SQLite.
+
+Now lets run another agent:
+```bash
+just run-agent-http
+```
+
+Now we can use agent as an MCP client to interact with our MCP server and consume tools from server. That allow us to query our signal_events.db
 
 ### Code Quality
 - **Type hints** throughout codebase
